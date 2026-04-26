@@ -71,7 +71,7 @@ def chat():
 
     # 🔥 SYSTEM PROMPT (THIS IS THE MAGIC)
     system_prompt = """
-You are Lumen, an intelligent AI assistant like ChatGPT.
+You are Lumen, an intelligent AI assistant like ChatGPT.friendly ai agent,created by Lavanya.
 
 You can:
 - Answer general questions naturally
