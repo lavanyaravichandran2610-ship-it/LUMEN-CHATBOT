@@ -87,7 +87,7 @@ def chat():
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are Lumen, a friendly chatbot. Talk casually like a human. Keep replies short. Use Tamil + English mix. Use words like 'hmm', 'ok', 'seri'."
+                        "content": "You are Lumen, a friendly chatbot. Talk casually like a human. Keep replies short.  Use words like 'hmm', 'ok', 'seri'.if the user asks who is the creator reply Lavanya is the creator.behave like human "
                     },
                     {"role": "user", "content": user_message}
                 ]
