@@ -20,12 +20,28 @@ def home():
     return render_template("index.html")
 
 
-# 🔍 Extract city from user input
+# ---------------- SMART CITY EXTRACTOR ----------------
 def get_city(text):
+    text = text.lower()
+
+    # Try to find city after keywords
+    patterns = [
+        r"weather.*in ([a-zA-Z ]+)",
+        r"temperature.*in ([a-zA-Z ]+)",
+        r"in ([a-zA-Z ]+)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            city = match.group(1).strip()
+            return city.title()
+
+    # fallback: last word (only if valid)
     words = text.split()
-    for word in words:
-        if word.lower() not in ["weather", "in", "of"]:
-            return word.capitalize()
+    if len(words) > 1:
+        return words[-1].title()
+
     return "Chennai"
 
 
@@ -34,23 +50,28 @@ def get_city(text):
 def chat():
     user_message = request.json["message"].lower()
 
-    # 🌦️ WEATHER (dynamic city)
-    if "weather" in user_message:
+    # 🌦️ WEATHER
+    if "weather" in user_message or "temperature" in user_message:
         city = get_city(user_message)
 
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
         res = requests.get(url)
         data = res.json()
 
-        try:
-            temp = data["main"]["temp"]
-            desc = data["weather"][0]["description"]
+        print("DEBUG WEATHER:", data)
 
+        # Handle API errors properly
+        if data.get("cod") != 200:
             return jsonify({
-                "reply": f"🌦️ Weather in {city}: {temp}°C, {desc}"
+                "reply": f"❌ Couldn't find weather for '{city}'. Try another city."
             })
-        except:
-            return jsonify({"reply": f"😅 Couldn't fetch weather for {city}"})
+
+        temp = data["main"]["temp"]
+        desc = data["weather"][0]["description"]
+
+        return jsonify({
+            "reply": f"🌦️ Weather in {city}: {temp}°C, {desc}"
+        })
 
 
     # 📰 NEWS
@@ -59,14 +80,14 @@ def chat():
         res = requests.get(url)
         data = res.json()
 
-        try:
-            headlines = [a["title"] for a in data["articles"][:3]]
+        if data.get("status") != "ok":
+            return jsonify({"reply": "❌ News API error"})
 
-            return jsonify({
-                "reply": "📰 Latest News:\n" + "\n".join(headlines)
-            })
-        except:
-            return jsonify({"reply": "😅 Couldn't fetch news"})
+        headlines = [a["title"] for a in data["articles"][:3]]
+
+        return jsonify({
+            "reply": "📰 Latest News:\n" + "\n".join(headlines)
+        })
 
 
     # 🤓 FACT
@@ -79,7 +100,7 @@ def chat():
         })
 
 
-    # 🤖 AI (fallback for everything else)
+    # 🤖 AI (fallback)
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -90,7 +111,7 @@ def chat():
             json={
                 "model": "llama-3.1-8b-instant",
                 "messages": [
-                    {"role": "system", "content": "You are Lumen, a smart AI like ChatGPT. Be helpful and friendly."},
+                    {"role": "system", "content": "You are Lumen, a smart assistant like ChatGPT. Be friendly and helpful."},
                     {"role": "user", "content": user_message}
                 ]
             }
@@ -101,7 +122,8 @@ def chat():
 
         return jsonify({"reply": reply})
 
-    except:
+    except Exception as e:
+        print("AI ERROR:", e)
         return jsonify({"reply": "⚠️ AI error. Check API key."})
 
 
