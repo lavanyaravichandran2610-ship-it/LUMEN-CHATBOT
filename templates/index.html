@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lumen AI</title>
+
+<style>
+body {
+    margin: 0;
+    background: #0f172a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: Arial;
+}
+
+.chat-wrapper {
+    width: 450px;
+    height: 600px;
+    background: #111827;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.header {
+    background: #1f2937;
+    color: white;
+    padding: 15px;
+    text-align: center;
+    font-weight: bold;
+}
+
+#chat-box {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.msg {
+    padding: 10px 12px;
+    margin: 6px;
+    border-radius: 10px;
+    max-width: 75%;
+    font-size: 14px;
+}
+
+.user {
+    align-self: flex-end;
+    background: #3b82f6;
+    color: white;
+}
+
+.bot {
+    align-self: flex-start;
+    background: #1f2937;
+    color: #e5e7eb;
+}
+
+.input-area {
+    display: flex;
+    padding: 10px;
+    background: #1f2937;
+}
+
+input {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    outline: none;
+    border-radius: 8px;
+    background: #111827;
+    color: white;
+}
+
+button {
+    margin-left: 8px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 8px;
+    background: #3b82f6;
+    color: white;
+    cursor: pointer;
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="chat-wrapper">
+
+    <div class="header">✨ Lumen AI</div>
+
+    <div id="chat-box"></div>
+
+    <div class="input-area">
+        <input id="input" placeholder="Message Lumen..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+</div>
+
+<script>
+async function sendMessage() {
+    let input = document.getElementById("input");
+    let message = input.value.trim();
+    if (!message) return;
+
+    let chatBox = document.getElementById("chat-box");
+
+    chatBox.innerHTML += `<div class="msg user">👤 ${message}</div>`;
+    input.value = "";
+
+    try {
+        let res = await fetch("/chat", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({message})
+        });
+
+        let data = await res.json();
+
+        chatBox.innerHTML += `<div class="msg bot">🤖 ${data.reply}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+    } catch (err) {
+        chatBox.innerHTML += `<div class="msg bot">❌ Server error</div>`;
+    }
+}
+
+/* ENTER KEY */
+document.getElementById("input").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") sendMessage();
+});
+</script>
+
+</body>
+</html>
