@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
 from dotenv import load_dotenv
@@ -7,6 +7,7 @@ import re
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = "lumen_secret"
 
 # 🔐 API KEYS
 WEATHER_API = os.getenv("WEATHER_API")
@@ -21,129 +22,147 @@ def home():
     return render_template("index.html")
 
 
-# ---------------- CITY EXTRACT ----------------
-def get_city(text):
-    text = text.lower()
+# ---------------- TOOLS ----------------
 
-    patterns = [
-        r"weather.*in ([a-zA-Z ]+)",
-        r"temperature.*in ([a-zA-Z ]+)",
-        r"in ([a-zA-Z ]+)"
-    ]
+def get_weather(city):
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
+    data = requests.get(url).json()
 
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1).strip().title()
+    if data.get("cod") != 200:
+        return f"Couldn't find weather for {city}"
 
-    words = text.split()
-    if len(words) > 1:
-        return words[-1].title()
-
-    return "Chennai"
+    return f"{city}: {data['main']['temp']}°C, {data['weather'][0]['description']}"
 
 
-# ---------------- REAL-TIME SEARCH ----------------
+def get_news():
+    url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
+    data = requests.get(url).json()
+
+    headlines = [a["title"] for a in data["articles"][:3]]
+    return "Top news:\n" + "\n".join(headlines)
+
+
 def search_google(query):
     url = "https://google.serper.dev/search"
-
-    payload = {"q": query}
 
     headers = {
         "X-API-KEY": SERPER_API_KEY,
         "Content-Type": "application/json"
     }
 
-    try:
-        res = requests.post(url, json=payload, headers=headers)
-        data = res.json()
+    data = requests.post(url, json={"q": query}, headers=headers).json()
 
+    try:
         return data["organic"][0]["snippet"]
     except:
-        return "😅 Couldn't fetch real-time info"
+        return "No real-time info found"
 
 
 # ---------------- CHAT ----------------
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json["message"].lower()
+    user_message = request.json["message"]
 
-    # 🌦️ WEATHER
-    if "weather" in user_message or "temperature" in user_message:
-        city = get_city(user_message)
+    # 🧠 MEMORY INIT
+    if "history" not in session:
+        session["history"] = []
 
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
-        res = requests.get(url)
-        data = res.json()
+    history = session["history"]
 
-        if data.get("cod") != 200:
-            return jsonify({"reply": f"❌ Couldn't find weather for {city}"})
+    # 🔥 SYSTEM PROMPT (THIS IS THE MAGIC)
+    system_prompt = """
+You are Lumen, an intelligent AI assistant like ChatGPT.
 
-        temp = data["main"]["temp"]
-        desc = data["weather"][0]["description"]
+You can:
+- Answer general questions naturally
+- Use tools when needed
 
-        return jsonify({
-            "reply": f"🌦️ Weather in {city}: {temp}°C, {desc}"
-        })
+Available tools:
+1. WEATHER(city)
+2. NEWS()
+3. SEARCH(query)
+
+Rules:
+- If user asks weather → respond exactly: WEATHER(city)
+- If news → NEWS()
+- If real-time info → SEARCH(query)
+- Otherwise answer normally
+
+Be natural, helpful, and conversational.
+"""
+
+    # build messages
+    messages = [{"role": "system", "content": system_prompt}]
+    messages += history
+    messages.append({"role": "user", "content": user_message})
+
+    # 🤖 FIRST AI CALL (decide action)
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "llama-3.1-8b-instant",
+            "messages": messages
+        }
+    )
+
+    data = response.json()
+    ai_reply = data["choices"][0]["message"]["content"]
+
+    # ---------------- TOOL EXECUTION ----------------
+
+    # WEATHER
+    if ai_reply.startswith("WEATHER"):
+        city = re.findall(r"\((.*?)\)", ai_reply)[0]
+        tool_result = get_weather(city)
+
+    # NEWS
+    elif ai_reply.startswith("NEWS"):
+        tool_result = get_news()
+
+    # SEARCH
+    elif ai_reply.startswith("SEARCH"):
+        query = re.findall(r"\((.*?)\)", ai_reply)[0]
+        tool_result = search_google(query)
+
+    else:
+        tool_result = ai_reply  # normal answer
+
+    # 🧠 SECOND AI CALL (make it natural)
+    final_response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": "Convert tool output into a natural, friendly reply."},
+                {"role": "user", "content": tool_result}
+            ]
+        }
+    )
+
+    final_data = final_response.json()
+    reply = final_data["choices"][0]["message"]["content"]
+
+    # 🧠 SAVE MEMORY
+    history.append({"role": "user", "content": user_message})
+    history.append({"role": "assistant", "content": reply})
+    session["history"] = history[-10:]
+
+    return jsonify({"reply": reply})
 
 
-    # 📰 NEWS
-    if "news" in user_message:
-        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
-        res = requests.get(url)
-        data = res.json()
-
-        if data.get("status") != "ok":
-            return jsonify({"reply": "❌ News API error"})
-
-        headlines = [a["title"] for a in data["articles"][:3]]
-
-        return jsonify({
-            "reply": "📰 Latest News:\n" + "\n".join(headlines)
-        })
-
-
-    # 🤓 FACT
-    if "fact" in user_message:
-        res = requests.get("https://uselessfacts.jsph.pl/api/v2/facts/random")
-        data = res.json()
-
-        return jsonify({
-            "reply": f"🤓 {data['text']}"
-        })
-
-
-    # 🔎 REAL-TIME SEARCH (IPL, today, score, etc.)
-    if any(word in user_message for word in ["ipl", "score", "today", "latest", "match"]):
-        result = search_google(user_message)
-        return jsonify({"reply": f"🔎 {result}"})
-
-
-    # 🤖 AI FALLBACK
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "llama-3.1-8b-instant",
-                "messages": [
-                    {"role": "system", "content": "You are Lumen, a smart AI like ChatGPT. Be helpful, friendly, and concise."},
-                    {"role": "user", "content": user_message}
-                ]
-            }
-        )
-
-        data = response.json()
-        reply = data["choices"][0]["message"]["content"]
-
-        return jsonify({"reply": reply})
-
-    except Exception as e:
-        print("AI ERROR:", e)
-        return jsonify({"reply": "⚠️ AI error. Check API key."})
+# ---------------- CLEAR ----------------
+@app.route("/clear", methods=["POST"])
+def clear():
+    session.pop("history", None)
+    return jsonify({"status": "cleared"})
 
 
 # ---------------- RUN ----------------
