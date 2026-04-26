@@ -89,6 +89,9 @@ Rules:
 - Otherwise answer normally
 
 Be natural, helpful, and conversational.
+be frienly to the user
+reply shortly
+
 """
 
     # build messages
