@@ -12,6 +12,7 @@ app = Flask(__name__)
 WEATHER_API = os.getenv("WEATHER_API")
 NEWS_API = os.getenv("NEWS_API")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 
 # ---------------- HOME ----------------
@@ -20,11 +21,10 @@ def home():
     return render_template("index.html")
 
 
-# ---------------- SMART CITY EXTRACTOR ----------------
+# ---------------- CITY EXTRACT ----------------
 def get_city(text):
     text = text.lower()
 
-    # Try to find city after keywords
     patterns = [
         r"weather.*in ([a-zA-Z ]+)",
         r"temperature.*in ([a-zA-Z ]+)",
@@ -34,15 +34,33 @@ def get_city(text):
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            city = match.group(1).strip()
-            return city.title()
+            return match.group(1).strip().title()
 
-    # fallback: last word (only if valid)
     words = text.split()
     if len(words) > 1:
         return words[-1].title()
 
     return "Chennai"
+
+
+# ---------------- REAL-TIME SEARCH ----------------
+def search_google(query):
+    url = "https://google.serper.dev/search"
+
+    payload = {"q": query}
+
+    headers = {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.post(url, json=payload, headers=headers)
+        data = res.json()
+
+        return data["organic"][0]["snippet"]
+    except:
+        return "😅 Couldn't fetch real-time info"
 
 
 # ---------------- CHAT ----------------
@@ -58,13 +76,8 @@ def chat():
         res = requests.get(url)
         data = res.json()
 
-        print("DEBUG WEATHER:", data)
-
-        # Handle API errors properly
         if data.get("cod") != 200:
-            return jsonify({
-                "reply": f"❌ Couldn't find weather for '{city}'. Try another city."
-            })
+            return jsonify({"reply": f"❌ Couldn't find weather for {city}"})
 
         temp = data["main"]["temp"]
         desc = data["weather"][0]["description"]
@@ -100,7 +113,13 @@ def chat():
         })
 
 
-    # 🤖 AI (fallback)
+    # 🔎 REAL-TIME SEARCH (IPL, today, score, etc.)
+    if any(word in user_message for word in ["ipl", "score", "today", "latest", "match"]):
+        result = search_google(user_message)
+        return jsonify({"reply": f"🔎 {result}"})
+
+
+    # 🤖 AI FALLBACK
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -111,7 +130,7 @@ def chat():
             json={
                 "model": "llama-3.1-8b-instant",
                 "messages": [
-                    {"role": "system", "content": "You are Lumen, a smart assistant like ChatGPT. Be friendly and helpful."},
+                    {"role": "system", "content": "You are Lumen, a smart AI like ChatGPT. Be helpful, friendly, and concise."},
                     {"role": "user", "content": user_message}
                 ]
             }
