@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import requests
 import os
 from dotenv import load_dotenv
@@ -11,7 +11,13 @@ app = Flask(__name__)
 WEATHER_API = os.getenv("WEATHER_API")
 NEWS_API = os.getenv("NEWS_API")
 
+# ---------------- HOME ----------------
+@app.route("/")
+def home():
+    return render_template("index.html")
 
+
+# ---------------- CHAT ----------------
 @app.route("/chat", methods=["POST"])
 def chat():
     user_message = request.json["message"].lower()
@@ -23,6 +29,8 @@ def chat():
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
         res = requests.get(url)
         data = res.json()
+
+        print("WEATHER DEBUG:", data)
 
         try:
             temp = data["main"]["temp"]
@@ -41,8 +49,10 @@ def chat():
         res = requests.get(url)
         data = res.json()
 
+        print("NEWS DEBUG:", data)
+
         try:
-            headlines = [article["title"] for article in data["articles"][:3]]
+            headlines = [a["title"] for a in data["articles"][:3]]
 
             return jsonify({
                 "reply": "📰 Latest News:\n" + "\n".join(headlines)
@@ -51,7 +61,7 @@ def chat():
             return jsonify({"reply": "😅 Couldn't fetch news"})
 
 
-    # 🤓 FACTS (No API key needed)
+    # 🤓 FACTS
     if "fact" in user_message:
         res = requests.get("https://uselessfacts.jsph.pl/api/v2/facts/random")
         data = res.json()
@@ -61,11 +71,12 @@ def chat():
         })
 
 
-    # ❗ DEFAULT RESPONSE
+    # ❗ DEFAULT
     return jsonify({
-        "reply": "Ask me about weather, news, or facts 🙂"
+        "reply": "Ask me about weather 🌦️, news 📰, or facts 🤓"
     })
 
 
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(debug=True)
