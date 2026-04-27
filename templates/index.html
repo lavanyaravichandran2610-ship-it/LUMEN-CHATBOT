@@ -2,10 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Lumen AI (Accessible)</title>
+<title>Lumen AI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
+
+/* 🌗 THEME VARIABLES */
+:root {
+    --bg: #1e1f25;
+    --text: #ffffff;
+    --sidebar: #202123;
+    --bot: #2a2b32;
+    --user: #444654;
+    --input: #40414f;
+}
+
+body.light {
+    --bg: #f5f5f5;
+    --text: #111;
+    --sidebar: #e0e0e0;
+    --bot: #ffffff;
+    --user: #dcdcdc;
+    --input: #eeeeee;
+}
+
 /* RESET */
 * {
     margin: 0;
@@ -15,9 +35,9 @@
 
 /* BODY */
 body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #1e1f25;
-    color: white;
+    font-family: system-ui;
+    background: var(--bg);
+    color: var(--text);
     display: flex;
     height: 100vh;
 }
@@ -25,8 +45,7 @@ body {
 /* SIDEBAR */
 .sidebar {
     width: 240px;
-    background: #202123;
-    height: 100vh;
+    background: var(--sidebar);
     padding: 15px;
     display: flex;
     flex-direction: column;
@@ -37,17 +56,13 @@ body {
 }
 
 .sidebar button {
-    padding: 12px;
+    padding: 10px;
+    margin-bottom: 10px;
     border: none;
     background: #10a37f;
     color: white;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
-}
-
-.sidebar button:hover {
-    background: #0e8f6f;
 }
 
 /* MAIN */
@@ -55,111 +70,75 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    height: 100vh;
 }
 
-/* CHAT AREA */
+/* CHAT */
 #chat-box {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
-    padding-bottom: 120px; /* space for input */
+    padding-bottom: 100px;
 }
 
-/* MESSAGE */
+/* MESSAGES */
 .msg {
-    max-width: 750px;
+    max-width: 700px;
     margin: 10px auto;
-    padding: 14px;
-    border-radius: 12px;
-    line-height: 1.5;
-    animation: fadeIn 0.2s ease-in;
+    padding: 12px;
+    border-radius: 10px;
 }
 
-/* USER MESSAGE */
 .user {
-    background: #444654;
+    background: var(--user);
 }
 
-/* BOT MESSAGE */
 .bot {
-    background: #2a2b32;
+    background: var(--bot);
 }
 
-/* INPUT AREA (FIXED BOTTOM) */
+/* INPUT */
 .input-area {
     position: fixed;
     bottom: 0;
-    left: 240px; /* match sidebar */
+    left: 240px;
     right: 0;
     padding: 15px;
-    background: #40414f;
-    border-top: 1px solid #555;
+    background: var(--input);
 }
 
-/* INPUT BOX */
 .input-box {
     max-width: 800px;
     margin: auto;
     display: flex;
-    background: #343541;
-    border-radius: 12px;
+    background: var(--bot);
+    border-radius: 10px;
     padding: 10px;
 }
 
-/* INPUT FIELD */
 input {
     flex: 1;
-    background: transparent;
     border: none;
-    color: white;
-    font-size: 16px;
+    background: transparent;
+    color: var(--text);
     outline: none;
+    font-size: 16px;
 }
 
-/* BUTTON */
 button.send {
     background: #10a37f;
     border: none;
     color: white;
-    padding: 10px 14px;
-    border-radius: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
     cursor: pointer;
 }
 
-button.send:hover {
-    background: #0e8f6f;
-}
-
-/* TYPING TEXT */
 .typing {
     opacity: 0.7;
     font-style: italic;
 }
 
-/* ANIMATION */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(5px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* SCROLLBAR (OPTIONAL NICE LOOK) */
-#chat-box::-webkit-scrollbar {
-    width: 6px;
-}
-
-#chat-box::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 10px;
-}
-
-/* 📱 MOBILE RESPONSIVE */
+/* MOBILE */
 @media (max-width: 768px) {
     .sidebar {
         display: none;
@@ -168,53 +147,38 @@ button.send:hover {
     .input-area {
         left: 0;
     }
-
-    .msg {
-        max-width: 95%;
-    }
 }
+
 </style>
 </head>
 
 <body>
 
-<!-- Sidebar -->
-<nav class="sidebar" aria-label="Sidebar">
-    <h1>✨ Lumen</h1>
-    <button onclick="clearChat()" aria-label="Start a new chat">+ New Chat</button>
-</nav>
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <h2>✨ Lumen</h2>
+    <button onclick="clearChat()">+ New Chat</button>
+    <button onclick="toggleTheme()">🌗 Toggle Theme</button>
+</div>
 
-<!-- Main Chat -->
-<main class="main">
-    
-    <!-- Chat messages -->
-    <section id="chat-box"
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions"
-        aria-label="Chat messages">
-    </section>
+<!-- MAIN -->
+<div class="main">
 
-    <!-- Input -->
-    <form class="input-area" onsubmit="sendMessage(event)" aria-label="Send message form">
+    <div id="chat-box"></div>
+
+    <form class="input-area" onsubmit="sendMessage(event)">
         <div class="input-box">
-            <label for="input" class="visually-hidden"></label>
-            <input 
-                id="input"
-                type="text"
-                placeholder="Type your message..."
-                aria-label="Message input"
-                required
-            />
-            <button class="send" type="submit" aria-label="Send message">Send</button>
+            <input id="input" placeholder="Message Lumen..." />
+            <button class="send">➤</button>
         </div>
     </form>
 
-</main>
+</div>
 
 <script>
-async function sendMessage(event) {
-    event.preventDefault();
+
+async function sendMessage(e) {
+    e.preventDefault();
 
     let input = document.getElementById("input");
     let message = input.value.trim();
@@ -222,19 +186,11 @@ async function sendMessage(event) {
 
     let chatBox = document.getElementById("chat-box");
 
-    // User message
-    let userMsg = document.createElement("div");
-    userMsg.className = "msg user";
-    userMsg.setAttribute("role", "article");
-    userMsg.innerText = message;
-    chatBox.appendChild(userMsg);
-
+    chatBox.innerHTML += `<div class="msg user">${message}</div>`;
     input.value = "";
 
-    // Typing indicator
     let typing = document.createElement("div");
     typing.className = "msg bot typing";
-    typing.setAttribute("role", "status");
     typing.innerText = "Lumen is thinking...";
     chatBox.appendChild(typing);
 
@@ -248,13 +204,7 @@ async function sendMessage(event) {
         let data = await res.json();
 
         typing.remove();
-
-        let botMsg = document.createElement("div");
-        botMsg.className = "msg bot";
-        botMsg.setAttribute("role", "article");
-        botMsg.innerText = data.reply;
-        chatBox.appendChild(botMsg);
-
+        chatBox.innerHTML += `<div class="msg bot">${data.reply}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
 
     } catch {
@@ -262,18 +212,31 @@ async function sendMessage(event) {
     }
 }
 
-// Keyboard shortcut (Enter)
-document.getElementById("input").addEventListener("keydown", function(e) {
-    if (e.key === "Enter") {
-        e.preventDefault();
-        sendMessage(e);
-    }
-});
+/* 🌗 THEME TOGGLE */
+function toggleTheme() {
+    document.body.classList.toggle("light");
 
+    if (document.body.classList.contains("light")) {
+        localStorage.setItem("theme", "light");
+    } else {
+        localStorage.setItem("theme", "dark");
+    }
+}
+
+/* LOAD SAVED THEME */
+window.onload = () => {
+    let saved = localStorage.getItem("theme");
+    if (saved === "light") {
+        document.body.classList.add("light");
+    }
+};
+
+/* CLEAR CHAT */
 async function clearChat() {
     await fetch("/clear", {method: "POST"});
     document.getElementById("chat-box").innerHTML = "";
 }
+
 </script>
 
 </body>
