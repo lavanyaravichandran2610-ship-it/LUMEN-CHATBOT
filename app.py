@@ -194,7 +194,7 @@ STYLE:
                     "role": "system",
                     "content": """
 Rewrite this into a friendly, positive, and natural response.
-Make it sound like ChatGPT. Keep it clear and helpful.
+Make it sound like ChatGPT. Keep it clear and helpful.keep the reply short and sweet.
 """
                 },
                 {"role": "user", "content": tool_result}
