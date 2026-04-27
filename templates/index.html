@@ -96,7 +96,7 @@ body {
     background: var(--bot);
 }
 
-/* INPUT */
+/* INPUT AREA */
 .input-area {
     position: fixed;
     bottom: 0;
@@ -106,6 +106,7 @@ body {
     background: var(--input);
 }
 
+/* INPUT BOX */
 .input-box {
     max-width: 800px;
     margin: auto;
@@ -115,6 +116,7 @@ body {
     padding: 10px;
 }
 
+/* INPUT FIELD */
 input {
     flex: 1;
     border: none;
@@ -124,6 +126,7 @@ input {
     font-size: 16px;
 }
 
+/* SEND BUTTON */
 button.send {
     background: #10a37f;
     border: none;
@@ -133,6 +136,12 @@ button.send {
     cursor: pointer;
 }
 
+/* THEME BUTTON */
+#theme-btn {
+    font-size: 18px;
+}
+
+/* TYPING TEXT */
 .typing {
     opacity: 0.7;
     font-style: italic;
@@ -158,7 +167,9 @@ button.send {
 <div class="sidebar">
     <h2>✨ Lumen</h2>
     <button onclick="clearChat()">+ New Chat</button>
-    <button onclick="toggleTheme()">🌗 Toggle Theme</button>
+
+    <!-- 🌗 THEME TOGGLE BUTTON -->
+    <button onclick="toggleTheme()" id="theme-btn">🌙</button>
 </div>
 
 <!-- MAIN -->
@@ -177,6 +188,7 @@ button.send {
 
 <script>
 
+/* 💬 SEND MESSAGE */
 async function sendMessage(e) {
     e.preventDefault();
 
@@ -212,26 +224,36 @@ async function sendMessage(e) {
     }
 }
 
-/* 🌗 THEME TOGGLE */
+/* 🌗 TOGGLE THEME */
 function toggleTheme() {
-    document.body.classList.toggle("light");
+    let body = document.body;
+    let btn = document.getElementById("theme-btn");
 
-    if (document.body.classList.contains("light")) {
+    body.classList.toggle("light");
+
+    if (body.classList.contains("light")) {
+        btn.textContent = "☀️";
         localStorage.setItem("theme", "light");
     } else {
+        btn.textContent = "🌙";
         localStorage.setItem("theme", "dark");
     }
 }
 
-/* LOAD SAVED THEME */
+/* 🔄 LOAD SAVED THEME */
 window.onload = () => {
-    let saved = localStorage.getItem("theme");
-    if (saved === "light") {
+    let savedTheme = localStorage.getItem("theme");
+    let btn = document.getElementById("theme-btn");
+
+    if (savedTheme === "light") {
         document.body.classList.add("light");
+        btn.textContent = "☀️";
+    } else {
+        btn.textContent = "🌙";
     }
 };
 
-/* CLEAR CHAT */
+/* 🧹 CLEAR CHAT */
 async function clearChat() {
     await fetch("/clear", {method: "POST"});
     document.getElementById("chat-box").innerHTML = "";
