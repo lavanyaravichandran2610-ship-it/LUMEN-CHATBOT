@@ -29,10 +29,8 @@ def get_weather(city):
     try:
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
         data = requests.get(url).json()
-
         if data.get("cod") != 200:
             return f"Weather not found for {city}"
-
         return f"{city}: {data['main']['temp']}°C, {data['weather'][0]['description']}"
     except:
         return "Weather service unavailable"
@@ -42,7 +40,6 @@ def get_news():
     try:
         url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
         data = requests.get(url).json()
-
         headlines = [a["title"] for a in data["articles"][:3]]
         return "Top news:\n" + "\n".join(headlines)
     except:
@@ -52,14 +49,11 @@ def get_news():
 def search_google(query):
     try:
         url = "https://google.serper.dev/search"
-
         headers = {
             "X-API-KEY": SERPER_API_KEY,
             "Content-Type": "application/json"
         }
-
         data = requests.post(url, json={"q": query}, headers=headers).json()
-
         return data.get("organic", [{}])[0].get("snippet", "No real-time info found")
     except:
         return "Search service unavailable"
@@ -70,7 +64,6 @@ def search_google(query):
 def summarize_history(history):
     if len(history) < 8:
         return history
-
     try:
         res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -86,7 +79,6 @@ def summarize_history(history):
                 ]
             }
         )
-
         summary = res.json()["choices"][0]["message"]["content"]
         return [{"role": "system", "content": "Memory: " + summary}]
     except:
@@ -97,7 +89,11 @@ def summarize_history(history):
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json["message"]
+    user_message = request.json["message"].strip()
+
+    # 🧠 QUICK HUMAN GREETING (hard rule)
+    if user_message.lower() in ["hi", "hello", "hey", "hii", "helo"]:
+        return jsonify({"reply": "Hey! 😊 How can I help you today?"})
 
     # 🧠 INIT MEMORY
     if "history" not in session:
@@ -110,37 +106,34 @@ def chat():
         last = history[-1]["content"]
         user_message = f"Previous context: {last}\nUser: {user_message}"
 
-    # 🔥 SYSTEM PROMPT (NO QUESTIONS VERSION)
+    # 🔥 SYSTEM PROMPT (SMART + HUMAN)
     system_prompt = """
-You are Lumen, an intelligent AI assistant.
-
-GOAL:
-- Always give a direct answer.
-
-STRICT RULES:
-- NEVER ask questions back
-- NEVER say "can you clarify"
-- NEVER respond with only questions
-- If unclear → assume best meaning and answer
+You are Lumen, a friendly and intelligent AI assistant.
 
 BEHAVIOR:
-- Answer like ChatGPT or Google
-- Be clear, informative, and confident
+- If user greets → reply casually like a human
+- If user asks something → give a clear direct answer
+- Do NOT treat simple messages like search queries
+- Do NOT give long answers unless needed
+
+RULES:
+- Do NOT ask unnecessary questions
+- If unclear → assume best meaning and answer
+- Be natural, friendly, and simple
 
 TOOLS:
 1. WEATHER(city)
 2. NEWS()
 3. SEARCH(query)
 
-RULES:
+TOOL RULES:
 - Use tools only when needed
 - If using tool → respond EXACTLY:
   TOOL_NAME(arguments)
 
 STYLE:
-- Direct answer first
-- Friendly but not overly chatty
-- No follow-up questions
+- Talk like a real person
+- Short, clean, helpful replies
 """
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -178,11 +171,7 @@ STYLE:
     else:
         tool_result = ai_reply
 
-    # fallback
-    if "unavailable" in tool_result.lower():
-        tool_result += ". Please try again later."
-
-    # 🤖 FINAL RESPONSE (NO QUESTIONS)
+    # 🤖 FINAL RESPONSE (HUMAN STYLE)
     final = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
@@ -195,13 +184,12 @@ STYLE:
                 {
                     "role": "system",
                     "content": """
-Rewrite this into a clear, direct answer.
+Rewrite this in a natural human tone.
 
 Rules:
-- Do NOT ask questions
-- Do NOT add follow-up prompts
-- Be informative and complete
-- Sound like ChatGPT or Google
+- If greeting → short and friendly
+- If answer → clear and simple
+- No robotic or textbook tone
 """
                 },
                 {"role": "user", "content": tool_result}
@@ -210,10 +198,6 @@ Rules:
     )
 
     reply = final.json()["choices"][0]["message"]["content"]
-
-    # 🔥 REMOVE accidental questions
-    if reply.strip().endswith("?"):
-        reply = reply.rstrip("?") + "."
 
     # 🧠 SAVE MEMORY
     history.append({"role": "user", "content": user_message})
