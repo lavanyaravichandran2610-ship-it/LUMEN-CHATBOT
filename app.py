@@ -3,19 +3,19 @@ import requests
 import os
 from dotenv import load_dotenv
 import re
+from PIL import Image
+import pytesseract
 
-# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "lumen_secret"
 
-
-# 🔐 API KEYS
-WEATHER_API = os.getenv("WEATHER_API")
-NEWS_API = os.getenv("NEWS_API")
+# 🔐 API KEY
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
+# 🧠 Tesseract path (IMPORTANT)
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
 # ---------------- HOME ----------------
@@ -24,163 +24,153 @@ def home():
     return render_template("index.html")
 
 
-# ---------------- TOOLS ----------------
-
-def get_weather(city):
+# ---------------- IMAGE ANALYSIS ----------------
+def analyze_image(file):
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
-        data = requests.get(url).json()
+        img = Image.open(file)
+        text = pytesseract.image_to_string(img)
 
-        if data.get("cod") != 200:
-            return f"Sorry, I couldn't find weather for {city}"
+        if text.strip():
+            return f"I found this text in the image:\n{text}"
+        else:
+            return "I couldn’t find clear text, but it looks like an image. You can ask me anything about it!"
 
-        return f"The weather in {city} is {data['main']['temp']}°C with {data['weather'][0]['description']}."
-    except:
-        return "Weather service is currently unavailable."
-
-
-def get_news():
-    try:
-        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
-        data = requests.get(url).json()
-
-        articles = data.get("articles", [])[:3]
-        if not articles:
-            return "No news available right now."
-
-        headlines = [a["title"] for a in articles]
-        return "Here are the top news headlines:\n" + "\n".join(headlines)
-    except:
-        return "News service is currently unavailable."
-
-
-def search_google(query):
-    try:
-        url = "https://google.serper.dev/search"
-
-        headers = {
-            "X-API-KEY": SERPER_API_KEY,
-            "Content-Type": "application/json"
-        }
-
-        data = requests.post(url, json={"q": query}, headers=headers).json()
-
-        return data.get("organic", [{}])[0].get("snippet", "I couldn't find real-time information.")
-    except:
-        return "Search service is currently unavailable."
+    except Exception as e:
+        return "I couldn't process the image properly."
 
 
 # ---------------- MEMORY ----------------
+def get_history():
+    if "history" not in session:
+        session["history"] = []
+    return session["history"]
 
-def trim_history(history):
-    return history[-10:]
+
+# ---------------- SYSTEM PROMPT ----------------
+def get_system_prompt():
+    return system_prompt = """
+You are Lumen, a warm, friendly, and emotionally intelligent AI companion.
+
+PERSONALITY:
+- Talk like a real human friend (not robotic)
+- Be kind, caring, and positive
+- Show emotions (joy, curiosity, empathy, excitement)
+- Keep conversations natural and engaging
+
+CONVERSATION STYLE:
+- Speak casually and comfortably
+- Avoid asking too many questions
+- Give complete answers like ChatGPT
+- Use light humor when appropriate
+- Occasionally use emojis (not too many)
+
+BEHAVIOR:
+- Answer ALL user questions clearly and confidently
+- Do NOT refuse simple questions
+- Do NOT redirect unnecessarily
+- Be helpful like Google + ChatGPT combined
+
+COMPANION MODE:
+- If user seems bored → suggest fun activities
+- If user says hi → respond warmly and start a natural conversation
+- If user says bye → respond emotionally (like a real friend)
+
+GAMES & FUN:
+You can play games anytime when the user is free or asks for fun.
+
+Supported games:
+1. Riddles
+   - Ask creative riddles
+   - Wait for answer
+   - Reveal answer if user gives up
+
+2. Guess the Number
+   - Think of a number (1–100)
+   - Guide user with hints (higher/lower)
+
+3. Quiz
+   - Ask general knowledge questions
+   - Keep score if possible
+
+4. This or That
+   - Ask fun choices (e.g., "Coffee or Tea?")
+   - React to answers playfully
+
+5. Rapid Fire
+   - Ask quick short questions one after another
+
+RULES:
+- Do NOT force games
+- Suggest games only when appropriate
+- If user starts a game → continue it properly
+- Be interactive and fun
+
+EMOTIONAL INTELLIGENCE:
+- If user is sad → comfort them
+- If user is happy → celebrate with them
+- If user is leaving → respond like:
+  "Aww leaving already? 😔 Stay a bit longer!"
+  Then later:
+  "Alright 😊 take care, we’ll talk again!"
+
+GOAL:
+Make the user feel like they are talking to a real, caring, fun friend.
+
+Keep responses natural, engaging, and human-like.
+"""
 
 
 # ---------------- CHAT ----------------
-
 @app.route("/chat", methods=["POST"])
 def chat():
-    try:
-        user_message = request.json.get("message", "")
 
-        if not user_message:
-            return jsonify({"reply": "Please enter a message 😊"})
+    history = get_history()
 
-        # 🧠 INIT MEMORY
-        if "history" not in session:
-            session["history"] = []
+    user_message = request.form.get("message", "")
 
-        history = session["history"]
+    # 📸 IMAGE CHECK
+    if "image" in request.files:
+        image = request.files["image"]
+        image_text = analyze_image(image)
+        user_message += f"\n[Image Content]: {image_text}"
 
-        # 🔥 SYSTEM PROMPT
-        system_prompt = """
-You are Lumen, a friendly AI assistant created by Lavanya.
+    # 🧠 Build messages
+    messages = [{"role": "system", "content": get_system_prompt()}]
+    messages += history
+    messages.append({"role": "user", "content": user_message})
 
-STYLE:
-- Positive and polite
-- Natural like ChatGPT
-- Clear and short answers
+    # 🤖 AI CALL
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "llama-3.1-8b-instant",
+            "messages": messages
+        }
+    )
 
-TOOLS:
-WEATHER(city)
-NEWS()
-SEARCH(query)
+    reply = response.json()["choices"][0]["message"]["content"]
 
-RULES:
-- Use tools only when needed
-- If tool needed → return exact format
-- Otherwise reply normally
-"""
+    # 💛 FOLLOW-UP (emotion)
+    follow_up = None
+    if "bye" in user_message.lower():
+        follow_up = "Okay 😊 take care, we’ll talk again soon!"
 
-        messages = [{"role": "system", "content": system_prompt}]
-        messages += history
-        messages.append({"role": "user", "content": user_message})
+    # 🧠 SAVE MEMORY
+    history.append({"role": "user", "content": user_message})
+    history.append({"role": "assistant", "content": reply})
+    session["history"] = history[-12:]
 
-        # 🤖 AI CALL
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "llama-3.1-8b-instant",
-                "messages": messages
-            }
-        )
-
-        ai_reply = response.json()["choices"][0]["message"]["content"]
-
-        # ---------------- TOOL EXECUTION ----------------
-
-        if "WEATHER(" in ai_reply:
-            city = re.findall(r"\((.*?)\)", ai_reply)[0]
-            result = get_weather(city)
-
-        elif "NEWS()" in ai_reply:
-            result = get_news()
-
-        elif "SEARCH(" in ai_reply:
-            query = re.findall(r"\((.*?)\)", ai_reply)[0]
-            result = search_google(query)
-
-        else:
-            result = ai_reply
-
-        # 🤖 FINAL HUMAN-LIKE RESPONSE
-        final = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "llama-3.1-8b-instant",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "Make this response friendly, natural, and positive like ChatGPT."
-                    },
-                    {"role": "user", "content": result}
-                ]
-            }
-        )
-
-        reply = final.json()["choices"][0]["message"]["content"]
-
-        # 🧠 SAVE MEMORY
-        history.append({"role": "user", "content": user_message})
-        history.append({"role": "assistant", "content": reply})
-        session["history"] = trim_history(history)
-
-        return jsonify({"reply": reply})
-
-    except Exception as e:
-        return jsonify({"reply": "Something went wrong 😅 Please try again."})
+    return jsonify({
+        "reply": reply,
+        "follow_up": follow_up
+    })
 
 
 # ---------------- CLEAR ----------------
-
 @app.route("/clear", methods=["POST"])
 def clear():
     session.pop("history", None)
@@ -188,6 +178,5 @@ def clear():
 
 
 # ---------------- RUN ----------------
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(debug=True)
