@@ -2,21 +2,20 @@ from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
 from dotenv import load_dotenv
-import base64
-from PIL import Image
-import io
-import pytesseract
-import random
+import re
 
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "lumen_secret"
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# 👉 If Windows, set path like this:
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# 🔐 API KEYS
+WEATHER_API = os.getenv("WEATHER_API")
+NEWS_API = os.getenv("NEWS_API")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 
 # ---------------- HOME ----------------
@@ -25,176 +24,100 @@ def home():
     return render_template("index.html")
 
 
-# ---------------- OCR ----------------
-def extract_text(image):
+# ---------------- TOOLS ----------------
+
+def get_weather(city):
     try:
-        img = Image.open(image)
-        text = pytesseract.image_to_string(img)
-        return text.strip()
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API}&units=metric"
+        data = requests.get(url).json()
+
+        if data.get("cod") != 200:
+            return f"Sorry, I couldn't find weather for {city}"
+
+        return f"The weather in {city} is {data['main']['temp']}°C with {data['weather'][0]['description']}."
     except:
-        return ""
+        return "Weather service is currently unavailable."
 
 
-# ---------------- VISION ----------------
-def vision_answer(image, question):
+def get_news():
     try:
-        img = Image.open(image)
-        img.thumbnail((800, 800))
+        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_API}"
+        data = requests.get(url).json()
 
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG")
-        encoded = base64.b64encode(buffer.getvalue()).decode()
+        articles = data.get("articles", [])[:3]
+        if not articles:
+            return "No news available right now."
 
-        prompt = f"""
-Analyze this image carefully.
-
-- Understand the content
-- Read any visible text
-- Answer the question clearly
-
-Question: {question}
-"""
-
-        res = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "llama-3.2-11b-vision-preview",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded}"
-                                }
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-
-        return res.json()["choices"][0]["message"]["content"]
-
+        headlines = [a["title"] for a in articles]
+        return "Here are the top news headlines:\n" + "\n".join(headlines)
     except:
-        return None
+        return "News service is currently unavailable."
 
 
-# ---------------- HYBRID IMAGE ANALYSIS ----------------
-def analyze_image(image, question):
+def search_google(query):
     try:
-        # 🔁 Reset pointer for reuse
-        image.seek(0)
+        url = "https://google.serper.dev/search"
 
-        # 1️⃣ OCR first (best for text)
-        text = extract_text(image)
+        headers = {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json"
+        }
 
-        if text and len(text) > 20:
-            prompt = f"""
-This text was extracted from an image:
+        data = requests.post(url, json={"q": query}, headers=headers).json()
 
-{text}
-
-Now answer the question:
-{question}
-
-Be clear and correct.
-"""
-
-            res = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": "Answer clearly."},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-            )
-
-            return res.json()["choices"][0]["message"]["content"]
-
-        # 2️⃣ If OCR weak → use vision
-        image.seek(0)
-        vision_result = vision_answer(image, question)
-
-        if vision_result:
-            return vision_result
-
-        # 3️⃣ Final fallback
-        return "I can see the image, but I need a clearer or more focused one to give an accurate answer 😊"
-
+        return data.get("organic", [{}])[0].get("snippet", "I couldn't find real-time information.")
     except:
-        return "Something went wrong while analyzing the image."
+        return "Search service is currently unavailable."
 
 
 # ---------------- MEMORY ----------------
-def get_history():
-    if "history" not in session:
-        session["history"] = []
-    return session["history"]
 
-
-def save_history(user, bot):
-    history = get_history()
-    history.append({"role": "user", "content": user})
-    history.append({"role": "assistant", "content": bot})
-    session["history"] = history[-10:]
+def trim_history(history):
+    return history[-10:]
 
 
 # ---------------- CHAT ----------------
+
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.form.get("message", "").strip()
-    image = request.files.get("image")
-
-    # 📷 IMAGE MODE
-    if image:
-        reply = analyze_image(image, user_message)
-        return jsonify({"reply": reply})
-
-    msg = user_message.lower()
-
-    # ❤️ EMOTIONS
-    if msg in ["hi", "hello", "hey"]:
-        return jsonify({"reply": "Hey 😊 I'm really happy to see you!"})
-
-    if any(word in msg for word in ["sad", "tired", "upset"]):
-        return jsonify({"reply": "I'm here for you 💛 Tell me what's wrong."})
-
-    if msg in ["bye", "goodbye"]:
-        replies = [
-            ("Why are you leaving 😢 Stay a bit more!", "Okay… take care ❤️ Come back soon!"),
-            ("Aww leaving already? 😔", "Alright 😊 Bye! See you again!")
-        ]
-        r = random.choice(replies)
-        return jsonify({"reply": r[0], "follow_up": r[1]})
-
-    # 🤖 NORMAL CHAT
     try:
-        history = get_history()
+        user_message = request.json.get("message", "")
 
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a friendly, helpful AI like ChatGPT. Answer clearly and confidently."
-            }
-        ]
+        if not user_message:
+            return jsonify({"reply": "Please enter a message 😊"})
 
+        # 🧠 INIT MEMORY
+        if "history" not in session:
+            session["history"] = []
+
+        history = session["history"]
+
+        # 🔥 SYSTEM PROMPT
+        system_prompt = """
+You are Lumen, a friendly AI assistant created by Lavanya.
+
+STYLE:
+- Positive and polite
+- Natural like ChatGPT
+- Clear and short answers
+
+TOOLS:
+WEATHER(city)
+NEWS()
+SEARCH(query)
+
+RULES:
+- Use tools only when needed
+- If tool needed → return exact format
+- Otherwise reply normally
+"""
+
+        messages = [{"role": "system", "content": system_prompt}]
         messages += history
         messages.append({"role": "user", "content": user_message})
 
-        res = requests.post(
+        # 🤖 AI CALL
+        response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -206,17 +129,58 @@ def chat():
             }
         )
 
-        reply = res.json()["choices"][0]["message"]["content"]
+        ai_reply = response.json()["choices"][0]["message"]["content"]
 
-        save_history(user_message, reply)
+        # ---------------- TOOL EXECUTION ----------------
+
+        if "WEATHER(" in ai_reply:
+            city = re.findall(r"\((.*?)\)", ai_reply)[0]
+            result = get_weather(city)
+
+        elif "NEWS()" in ai_reply:
+            result = get_news()
+
+        elif "SEARCH(" in ai_reply:
+            query = re.findall(r"\((.*?)\)", ai_reply)[0]
+            result = search_google(query)
+
+        else:
+            result = ai_reply
+
+        # 🤖 FINAL HUMAN-LIKE RESPONSE
+        final = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Make this response friendly, natural, and positive like ChatGPT."
+                    },
+                    {"role": "user", "content": result}
+                ]
+            }
+        )
+
+        reply = final.json()["choices"][0]["message"]["content"]
+
+        # 🧠 SAVE MEMORY
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": reply})
+        session["history"] = trim_history(history)
 
         return jsonify({"reply": reply})
 
-    except:
-        return jsonify({"reply": "Something went wrong 😅"})
+    except Exception as e:
+        return jsonify({"reply": "Something went wrong 😅 Please try again."})
 
 
 # ---------------- CLEAR ----------------
+
 @app.route("/clear", methods=["POST"])
 def clear():
     session.pop("history", None)
@@ -224,5 +188,6 @@ def clear():
 
 
 # ---------------- RUN ----------------
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
