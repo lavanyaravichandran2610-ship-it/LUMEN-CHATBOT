@@ -31,11 +31,11 @@ def get_weather(city):
         data = requests.get(url).json()
 
         if data.get("cod") != 200:
-            return f"Sorry, I couldn't find weather for {city}"
+            return f"Weather not found for {city}"
 
-        return f"The weather in {city} is {data['main']['temp']}°C with {data['weather'][0]['description']}."
+        return f"{city}: {data['main']['temp']}°C, {data['weather'][0]['description']}"
     except:
-        return "Weather service is currently unavailable."
+        return "Weather service unavailable"
 
 
 def get_news():
@@ -44,9 +44,9 @@ def get_news():
         data = requests.get(url).json()
 
         headlines = [a["title"] for a in data["articles"][:3]]
-        return "Here are the top news headlines:\n" + "\n".join(headlines)
+        return "Top news:\n" + "\n".join(headlines)
     except:
-        return "News service is currently unavailable."
+        return "News service unavailable"
 
 
 def search_google(query):
@@ -60,9 +60,9 @@ def search_google(query):
 
         data = requests.post(url, json={"q": query}, headers=headers).json()
 
-        return data.get("organic", [{}])[0].get("snippet", "I couldn't find real-time information.")
+        return data.get("organic", [{}])[0].get("snippet", "No real-time info found")
     except:
-        return "Search service is currently unavailable."
+        return "Search service unavailable"
 
 
 # ---------------- MEMORY ----------------
@@ -89,7 +89,6 @@ def summarize_history(history):
 
         summary = res.json()["choices"][0]["message"]["content"]
         return [{"role": "system", "content": "Memory: " + summary}]
-
     except:
         return history[-6:]
 
@@ -106,24 +105,27 @@ def chat():
 
     history = session["history"]
 
-    # 🧠 CONTEXT AWARENESS
+    # 🧠 CONTEXT
     if history:
         last = history[-1]["content"]
         user_message = f"Previous context: {last}\nUser: {user_message}"
 
-    # 🔥 SYSTEM PROMPT
+    # 🔥 SYSTEM PROMPT (NO QUESTIONS VERSION)
     system_prompt = """
-You are Lumen, a friendly and intelligent AI assistant created by Lavanya.
+You are Lumen, an intelligent AI assistant.
 
-PERSONALITY:
-- Positive, polite, and supportive
-- Clear and easy to understand
-- Natural like ChatGPT
+GOAL:
+- Always give a direct answer.
+
+STRICT RULES:
+- NEVER ask questions back
+- NEVER say "can you clarify"
+- NEVER respond with only questions
+- If unclear → assume best meaning and answer
 
 BEHAVIOR:
-- Understand the user clearly
-- Give helpful responses
-- Keep answers simple unless more detail is needed
+- Answer like ChatGPT or Google
+- Be clear, informative, and confident
 
 TOOLS:
 1. WEATHER(city)
@@ -132,13 +134,13 @@ TOOLS:
 
 RULES:
 - Use tools only when needed
-- If using tool → respond exactly:
+- If using tool → respond EXACTLY:
   TOOL_NAME(arguments)
-- Otherwise respond normally
 
 STYLE:
-- Conversational and friendly
-- Avoid robotic replies
+- Direct answer first
+- Friendly but not overly chatty
+- No follow-up questions
 """
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -176,11 +178,11 @@ STYLE:
     else:
         tool_result = ai_reply
 
-    # fallback improvement
-    if "unavailable" in tool_result or "couldn't" in tool_result.lower():
-        tool_result += " Please try again in a moment."
+    # fallback
+    if "unavailable" in tool_result.lower():
+        tool_result += ". Please try again later."
 
-    # 🤖 FINAL RESPONSE (humanize)
+    # 🤖 FINAL RESPONSE (NO QUESTIONS)
     final = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
@@ -193,8 +195,13 @@ STYLE:
                 {
                     "role": "system",
                     "content": """
-Rewrite this into a friendly, positive, and natural response.
-Make it sound like ChatGPT. Keep it clear and helpful.keep the reply short and sweet.
+Rewrite this into a clear, direct answer.
+
+Rules:
+- Do NOT ask questions
+- Do NOT add follow-up prompts
+- Be informative and complete
+- Sound like ChatGPT or Google
 """
                 },
                 {"role": "user", "content": tool_result}
@@ -204,9 +211,9 @@ Make it sound like ChatGPT. Keep it clear and helpful.keep the reply short and s
 
     reply = final.json()["choices"][0]["message"]["content"]
 
-    # small positivity touch
-    if len(reply.split()) < 6:
-        reply += " 😊"
+    # 🔥 REMOVE accidental questions
+    if reply.strip().endswith("?"):
+        reply = reply.rstrip("?") + "."
 
     # 🧠 SAVE MEMORY
     history.append({"role": "user", "content": user_message})
