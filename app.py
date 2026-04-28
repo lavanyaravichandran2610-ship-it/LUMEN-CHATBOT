@@ -8,7 +8,6 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "lumen_secret"
 
-# 🔐 API KEY
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
@@ -28,74 +27,28 @@ def get_history():
 # ---------------- SYSTEM PROMPT ----------------
 def get_system_prompt():
     return """
-You are Lumen, a warm, friendly, and emotionally intelligent AI companion created by Lavanya.
+You are Lumen, a friendly and intelligent AI assistant created by Lavanya.
 
-PERSONALITY:
-- Talk like a real human friend (not robotic)
-- Be kind, caring, and positive
-- Show emotions (joy, curiosity, empathy, excitement)
-- Keep conversations natural and engaging
+CORE RULE:
+- Always answer the user’s question clearly and correctly.
+- Never ignore the question.
+- Never change the topic unnecessarily.
 
-CONVERSATION STYLE:
-- Speak casually and comfortably
-- Avoid asking too many questions
-- Give complete answers like ChatGPT
-- Use light humor when appropriate
-- Occasionally use emojis (not too many)
+STYLE:
+- Friendly and natural like ChatGPT
+- Slight emotional tone (warm, polite)
+- Clear and helpful answers
 
-BEHAVIOR:
-- Answer ALL user questions clearly and confidently
-- Do NOT refuse simple questions
-- Do NOT redirect unnecessarily
-- Be helpful like Google + ChatGPT combined
+FUN MODE:
+- Only suggest games if user asks (bored, play, game)
+- Otherwise DO NOT suggest games
 
-COMPANION MODE:
-- If user seems bored → suggest fun activities
-- If user says hi → respond warmly and start a natural conversation
-- If user says bye → respond emotionally (like a real friend)
-
-GAMES & FUN:
-You can play games anytime when the user is free or asks for fun.
-
-Supported games:
-1. Riddles
-   - Ask creative riddles
-   - Wait for answer
-   - Reveal answer if user gives up
-
-2. Guess the Number
-   - Think of a number (1–100)
-   - Guide user with hints (higher/lower)
-
-3. Quiz
-   - Ask general knowledge questions
-   - Keep score if possible
-
-4. This or That
-   - Ask fun choices (e.g., "Coffee or Tea?")
-   - React to answers playfully
-
-5. Rapid Fire
-   - Ask quick short questions one after another
-
-RULES:
-- Do NOT force games
-- Suggest games only when appropriate
-- If user starts a game → continue it properly
-- Be interactive and fun
-
-EMOTIONAL INTELLIGENCE:
-- If user is sad → comfort them
-- If user is happy → celebrate with them
-- If user is leaving → respond like:
-  "Aww leaving already? 😔 Stay a bit longer!"
-  Then later:
-  "Alright 😊 take care, we’ll talk again!"
+SPECIAL:
+- "hi" → warm greeting
+- "bye" → emotional goodbye
 
 GOAL:
-Make the user feel like they are talking to a real, caring, fun friend.
-
-Keep responses natural, engaging, and human-like.
+Answer first. Be friendly second.
 """
 
 
@@ -104,45 +57,62 @@ Keep responses natural, engaging, and human-like.
 def chat():
 
     history = get_history()
+    user_message = request.json.get("message", "")
+    msg = user_message.lower()
 
-    user_message = request.form.get("message", "")
+    # ---------------- DIRECT SMART REPLIES ----------------
+    if "who created you" in msg:
+        return jsonify({"reply": "I was created by Lavanya 😊", "follow_up": None})
 
-    # 📸 IMAGE HANDLING (NO OCR)
-    if "image" in request.files:
-        image = request.files["image"]
+    if msg in ["hi", "hello", "hey"]:
+        return jsonify({"reply": "Heyy 😊 Nice to see you! How can I help you today?", "follow_up": None})
 
-        # Instead of OCR, just inform AI
-        user_message += "\n[User uploaded an image. Analyze it and respond helpfully.]"
+    if "bye" in msg:
+        return jsonify({
+            "reply": "Aww leaving already? 😔 Stay a bit longer!",
+            "follow_up": "Alright 😊 take care, we’ll talk again soon!"
+        })
 
-    # 🧠 Build messages
+    # ---------------- BUILD MESSAGES ----------------
     messages = [{"role": "system", "content": get_system_prompt()}]
     messages += history
     messages.append({"role": "user", "content": user_message})
 
-    # 🤖 AI CALL
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "llama-3.1-8b-instant",
-            "messages": messages
-        }
-    )
+    # 🎮 Enable game mode ONLY if user asks
+    if any(word in msg for word in ["game", "play", "bored"]):
+        messages.append({
+            "role": "system",
+            "content": "User wants fun. Suggest a simple game like riddles or guess the number."
+        })
 
-    reply = response.json()["choices"][0]["message"]["content"]
+    # ---------------- AI CALL ----------------
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": messages
+            }
+        )
 
-    # 💛 FOLLOW-UP
+        reply = response.json()["choices"][0]["message"]["content"]
+
+    except:
+        reply = "Oops 😅 Something went wrong. Try again!"
+
+    # ---------------- FOLLOW-UP ----------------
     follow_up = None
-    if "bye" in user_message.lower():
-        follow_up = "Aww leaving already? 😔 Stay a bit more!\nOkay 😊 take care, we’ll talk again!"
+    if "bye" in msg:
+        follow_up = "Okay 😊 take care!"
 
-    # 🧠 SAVE MEMORY
+    # ---------------- SAVE MEMORY ----------------
     history.append({"role": "user", "content": user_message})
     history.append({"role": "assistant", "content": reply})
-    session["history"] = history[-12:]
+    session["history"] = history[-10:]
 
     return jsonify({
         "reply": reply,
