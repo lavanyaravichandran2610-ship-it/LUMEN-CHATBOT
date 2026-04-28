@@ -2,9 +2,6 @@ from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
 from dotenv import load_dotenv
-import re
-from PIL import Image
-import pytesseract
 
 load_dotenv()
 
@@ -14,29 +11,11 @@ app.secret_key = "lumen_secret"
 # 🔐 API KEY
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# 🧠 Tesseract path (IMPORTANT)
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
 
 # ---------------- HOME ----------------
 @app.route("/")
 def home():
     return render_template("index.html")
-
-
-# ---------------- IMAGE ANALYSIS ----------------
-def analyze_image(file):
-    try:
-        img = Image.open(file)
-        text = pytesseract.image_to_string(img)
-
-        if text.strip():
-            return f"I found this text in the image:\n{text}"
-        else:
-            return "I couldn’t find clear text, but it looks like an image. You can ask me anything about it!"
-
-    except Exception as e:
-        return "I couldn't process the image properly."
 
 
 # ---------------- MEMORY ----------------
@@ -48,8 +27,8 @@ def get_history():
 
 # ---------------- SYSTEM PROMPT ----------------
 def get_system_prompt():
-    return system_prompt = """
-You are Lumen, a warm, friendly, and emotionally intelligent AI companion.
+    return """
+You are Lumen, a warm, friendly, and emotionally intelligent AI companion created by Lavanya.
 
 PERSONALITY:
 - Talk like a real human friend (not robotic)
@@ -128,11 +107,12 @@ def chat():
 
     user_message = request.form.get("message", "")
 
-    # 📸 IMAGE CHECK
+    # 📸 IMAGE HANDLING (NO OCR)
     if "image" in request.files:
         image = request.files["image"]
-        image_text = analyze_image(image)
-        user_message += f"\n[Image Content]: {image_text}"
+
+        # Instead of OCR, just inform AI
+        user_message += "\n[User uploaded an image. Analyze it and respond helpfully.]"
 
     # 🧠 Build messages
     messages = [{"role": "system", "content": get_system_prompt()}]
@@ -154,10 +134,10 @@ def chat():
 
     reply = response.json()["choices"][0]["message"]["content"]
 
-    # 💛 FOLLOW-UP (emotion)
+    # 💛 FOLLOW-UP
     follow_up = None
     if "bye" in user_message.lower():
-        follow_up = "Okay 😊 take care, we’ll talk again soon!"
+        follow_up = "Aww leaving already? 😔 Stay a bit more!\nOkay 😊 take care, we’ll talk again!"
 
     # 🧠 SAVE MEMORY
     history.append({"role": "user", "content": user_message})
