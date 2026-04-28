@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
 from dotenv import load_dotenv
@@ -8,6 +8,7 @@ import random
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = "lumen_secret"
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -21,12 +22,20 @@ def home():
 # ---------------- IMAGE ANALYSIS ----------------
 def analyze_image(image, question):
     try:
-        img_bytes = image.read()
-        encoded = base64.b64encode(img_bytes).decode("utf-8")
+        image_bytes = image.read()
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
 
-        prompt = question if question else "Describe this image clearly."
+        prompt = f"""
+You are an intelligent AI.
 
-        res = requests.post(
+1. Read the image carefully (extract text if present).
+2. Understand the user's question.
+3. Give a clear, correct answer.
+
+Question: {question}
+"""
+
+        response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -51,16 +60,30 @@ def analyze_image(image, question):
             }
         )
 
-        return res.json()["choices"][0]["message"]["content"]
+        return response.json()["choices"][0]["message"]["content"]
 
-    except:
-        return "Sorry, I couldn't understand the image."
+    except Exception as e:
+        return "I couldn't read the image clearly. Try sending a clearer image 😊"
+
+
+# ---------------- MEMORY ----------------
+def get_history():
+    if "history" not in session:
+        session["history"] = []
+    return session["history"]
+
+
+def save_history(user, bot):
+    history = get_history()
+    history.append({"role": "user", "content": user})
+    history.append({"role": "assistant", "content": bot})
+    session["history"] = history[-10:]
 
 
 # ---------------- CHAT ----------------
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.form.get("message", "").strip().lower()
+    user_message = request.form.get("message", "").strip()
     image = request.files.get("image")
 
     # 📷 IMAGE MODE
@@ -68,26 +91,47 @@ def chat():
         reply = analyze_image(image, user_message)
         return jsonify({"reply": reply})
 
-    # ❤️ EMOTIONS
-    if user_message in ["hi", "hello", "hey"]:
-        return jsonify({"reply": "Hey! 😊 I'm really happy to see you here."})
+    msg = user_message.lower()
 
-    if any(word in user_message for word in ["sad", "tired", "upset"]):
-        return jsonify({"reply": "I'm here for you 💛 Tell me what's bothering you."})
+    # ❤️ EMOTIONAL RESPONSES
+    if msg in ["hi", "hello", "hey"]:
+        reply = "Hey 😊 I'm really happy to see you! How can I help you today?"
+        return jsonify({"reply": reply})
 
-    if user_message in ["bye", "goodbye"]:
-        replies = [
-            ("Aww leaving already? 😢 I enjoyed talking with you.",
-             "Okay… take care ❤️ Come back soon!"),
-            ("Don't go 😢 Stay a bit more!",
-             "Alright… bye 😊 See you soon!")
+    if any(word in msg for word in ["sad", "upset", "tired"]):
+        reply = "I'm here for you 💛 You can share anything with me."
+        return jsonify({"reply": reply})
+
+    if msg in ["bye", "goodbye"]:
+        responses = [
+            ("Why are you leaving 😢 Stay a bit more!", "Okay… take care ❤️ Let's talk again soon!"),
+            ("Aww leaving already? 😔", "Alright 😊 Bye! Come back anytime.")
         ]
-        r = random.choice(replies)
+        r = random.choice(responses)
         return jsonify({"reply": r[0], "follow_up": r[1]})
 
-    # 🤖 NORMAL AI
+    # 🤖 NORMAL AI CHAT
     try:
-        res = requests.post(
+        history = get_history()
+
+        messages = [
+            {
+                "role": "system",
+                "content": """
+You are Lumen, a friendly AI assistant.
+
+- Be natural like ChatGPT
+- Be helpful and clear
+- Don't ask unnecessary questions
+- Answer confidently
+"""
+            }
+        ]
+
+        messages += history
+        messages.append({"role": "user", "content": user_message})
+
+        response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -95,23 +139,28 @@ def chat():
             },
             json={
                 "model": "llama-3.1-8b-instant",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a friendly, helpful AI. Answer clearly and naturally."
-                    },
-                    {"role": "user", "content": user_message}
-                ]
+                "messages": messages
             }
         )
 
-        reply = res.json()["choices"][0]["message"]["content"]
+        reply = response.json()["choices"][0]["message"]["content"]
+
+        # 🧠 Save memory
+        save_history(user_message, reply)
+
         return jsonify({"reply": reply})
 
-    except:
-        return jsonify({"reply": "Something went wrong 😅"})
+    except Exception as e:
+        return jsonify({"reply": "Something went wrong 😅 Try again."})
+
+
+# ---------------- CLEAR ----------------
+@app.route("/clear", methods=["POST"])
+def clear():
+    session.pop("history", None)
+    return jsonify({"status": "cleared"})
 
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
